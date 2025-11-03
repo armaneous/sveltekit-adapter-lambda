@@ -1,8 +1,12 @@
 {
   "name": "@armaneous/adapter-lambda",
-  "version": "1.3.0",
+  "version": "1.3.3",
   "license": "MIT",
+  "type": "module",
   "description": "An adapter for [SvelteKit](https://kit.svelte.dev/) for AWS Lambda. Forked from [@yarbsemaj/adapter-lambda](https://github.com/yarbsemaj/adapter-lambda)",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/armaneous/adapter-lambda.git"
@@ -21,6 +25,9 @@
   },
   "homepage": "https://github.com/armaneous/adapter-lambda#readme",
   "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
   "files": [
     "files"
   ],
@@ -34,6 +41,7 @@
   },
   "devDependencies": {
     "@silvermine/serverless-plugin-cloudfront-lambda-edge": "^2.2.3",
+    "@types/fs-extra": "^11.0.4",
     "aws-cdk-lib": "^2.143.0",
     "esbuild": "^0.25.12",
     "serverless": "^3.0.0",
