@@ -29,15 +29,14 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@silvermine/serverless-plugin-cloudfront-lambda-edge": "^2.2.3",
-    "diagnostics_channel": "^1.1.0",
-    "esbuild": "^0.25.12",
     "fs-extra": "^10.0.0",
-    "serverless": "^3.0.0",
-    "serverless-s3-deploy": "^0.10.1",
     "set-cookie-parser": "^2.5.0"
   },
   "devDependencies": {
-    "aws-cdk-lib": "^2.143.0"
+    "@silvermine/serverless-plugin-cloudfront-lambda-edge": "^2.2.3",
+    "aws-cdk-lib": "^2.143.0",
+    "esbuild": "^0.25.12",
+    "serverless": "^3.0.0",
+    "serverless-s3-deploy": "^0.10.1"
   }
 }
