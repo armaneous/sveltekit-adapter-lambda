@@ -1,7 +1,7 @@
-const { copyFileSync, unlinkSync, existsSync, statSync, mkdirSync, emptyDirSync, readdirSync, writeFileSync } = require('fs-extra');
-const { join } = require('path/posix');
+import { copyFileSync, unlinkSync, existsSync, statSync, mkdirSync, emptyDirSync, readdirSync, writeFileSync } from 'fs-extra';
+import { join } from 'path/posix';
 
-const esbuild = require('esbuild');
+import * as esbuild from 'esbuild';
 
 /**
  * @param {{
@@ -9,7 +9,7 @@ const esbuild = require('esbuild');
  *   esbuildOverride?: import('esbuild').BuildOptions;
  * }} options
  */
-module.exports = function ({ out = 'build', esbuildOverride = {} } = {}) {
+export default function ({ out = 'build', esbuildOverride = {} } = {}) {
   /** @type {import('@sveltejs/kit').Adapter} */
   const adapter = {
     name: 'adapter-serverless',
@@ -32,11 +32,6 @@ module.exports = function ({ out = 'build', esbuildOverride = {} } = {}) {
         mkdirSync(server_directory, { recursive: true });
       }
 
-      const edge_directory = join(out, 'edge');
-      if (!existsSync(edge_directory)) {
-        mkdirSync(edge_directory, { recursive: true });
-      }
-
       builder.log.minor('Copying assets');
       builder.writeClient(static_directory);
 
@@ -48,46 +43,30 @@ module.exports = function ({ out = 'build', esbuildOverride = {} } = {}) {
 
       builder.log.minor('Building lambda');
       esbuild.buildSync({
-        ...{
-          entryPoints: [`${server_directory}/_serverless.js`],
-          outfile: `${server_directory}/serverless.js`,
-          inject: [join(`${server_directory}/shims.js`)],
-          external: ['node:*'],
-          format: 'cjs',
-          bundle: true,
-          platform: 'node',
-        }, ...esbuildOverride
+        entryPoints: [`${server_directory}/_serverless.js`],
+        outfile: `${server_directory}/serverless.js`,
+        inject: [join(`${server_directory}/shims.js`)],
+        external: ['node:*'],
+        format: 'cjs',
+        bundle: true,
+        platform: 'node',
+        ...esbuildOverride
       });
 
       builder.log.minor('Prerendering static pages');
       await builder.writePrerendered(prerendered_directory);
 
-      console.log('Building router');
-      copyFileSync(`${__dirname}/files/router.js`, `${edge_directory}/_router.js`);
-      let files = JSON.stringify([...getAllFiles(static_directory), ...getAllFiles(prerendered_directory)])
-      writeFileSync(`${edge_directory}/static.js`, `export default ${files}`)
-
-      esbuild.buildSync({
-        entryPoints: [`${edge_directory}/_router.js`],
-        outfile: `${edge_directory}/router.js`,
-        format: 'cjs',
-        bundle: true,
-        platform: 'node',
-      });
-
-
       builder.log.minor('Cleanup');
       unlinkSync(`${server_directory}/_serverless.js`);
-      unlinkSync(`${edge_directory}/_router.js`);
       unlinkSync(`${out}/index.js`);
     },
   };
 
   return adapter;
-};
+}
 
 const getAllFiles = function (dirPath, basePath, arrayOfFiles) {
-  files = readdirSync(dirPath)
+  const files = readdirSync(dirPath)
 
   arrayOfFiles = arrayOfFiles || []
   basePath = basePath || dirPath

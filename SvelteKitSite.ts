@@ -1,7 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import { Duration } from 'aws-cdk-lib';
 import { CacheCookieBehavior, CacheHeaderBehavior, CacheQueryStringBehavior, OriginRequestCookieBehavior, OriginRequestHeaderBehavior, OriginRequestQueryStringBehavior, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
-import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { OriginAccessIdentity } from 'aws-cdk-lib/aws-cloudfront';
+import { Effect, PolicyStatement, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { FunctionUrlAuthType } from 'aws-cdk-lib/aws-lambda';
 import { BlockPublicAccess, BucketAccessControl } from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
@@ -37,15 +38,12 @@ export class SvelteKitSite extends Construct {
 
         const svelteURL = svelte.addFunctionUrl({ authType: FunctionUrlAuthType.NONE })
 
-        const edgeFunction = new cdk.aws_cloudfront.experimental.EdgeFunction(this, `${id}-svelte-lambda-edge`, {
-            runtime: cdk.aws_lambda.Runtime.NODEJS_18_X,
-            handler: 'router.handler',
-            memorySize: 128,
-            code: cdk.aws_lambda.Code.fromAsset(path.join(__dirname, './build/edge')),
+        const originAccessIdentity = new OriginAccessIdentity(this, `${id}-cloudfront-oai`, {
+            comment: `Origin Access Identity for ${id} static assets`,
         });
 
         const staticAssets = new cdk.aws_s3.Bucket(this, `${id}-static-asset-bucket`, {
-            blockPublicAccess: BlockPublicAccess.BLOCK_ACLS,
+            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
             accessControl: BucketAccessControl.BUCKET_OWNER_FULL_CONTROL,
         })
 
@@ -53,8 +51,8 @@ export class SvelteKitSite extends Construct {
             actions: ['s3:GetObject'],
             effect: Effect.ALLOW,
             resources: [staticAssets.arnForObjects('*')],
-            sid: 'PublicReadGetObject',
-            principals: [new cdk.aws_iam.AnyPrincipal()]
+            sid: 'CloudFrontReadGetObject',
+            principals: [new cdk.aws_iam.CanonicalUserPrincipal(originAccessIdentity.cloudFrontOriginAccessIdentityS3CanonicalUserId)]
         }))
 
         const forwardHeaderFunction = new cdk.aws_cloudfront.Function(this, `${id}-forward-header-function`, {
@@ -101,7 +99,7 @@ export class SvelteKitSite extends Construct {
                 allowedMethods: cdk.aws_cloudfront.AllowedMethods.ALLOW_ALL,
                 origin: new cdk.aws_cloudfront_origins.HttpOrigin(cdk.Fn.select(2, cdk.Fn.split('/', svelteURL.url)), {
                     customHeaders: {
-                        's3-host': staticAssets.virtualHostedUrlForObject().replace('https://', '')
+                        's3-host': staticAssets.bucketRegionalDomainName
                     }
                 }),
                 viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -120,19 +118,36 @@ export class SvelteKitSite extends Construct {
                 }),
                 ...props?.cloudfrontProps?.defaultBehavior,
                 edgeLambdas: [
-                    {
-                        functionVersion: edgeFunction.currentVersion,
-                        eventType: cdk.aws_cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST,
-                    },
                     ...(props?.cloudfrontProps?.defaultBehavior?.edgeLambdas || [])
                 ],
-                functionAssociations: [{
-                    function: forwardHeaderFunction,
-                    eventType: cdk.aws_cloudfront.FunctionEventType.VIEWER_REQUEST,
-                },
-                ...(props?.cloudfrontProps?.defaultBehavior?.functionAssociations || [])
-            ],
+                functionAssociations: [
+                    {
+                        function: forwardHeaderFunction,
+                        eventType: cdk.aws_cloudfront.FunctionEventType.VIEWER_REQUEST,
+                    },
+                    ...(props?.cloudfrontProps?.defaultBehavior?.functionAssociations || [])
+                ],
             },
+            additionalBehaviors: {
+                '/_app/immutable/*': {
+                    allowedMethods: cdk.aws_cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+                    cachedMethods: cdk.aws_cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
+                    origin: new cdk.aws_cloudfront_origins.S3Origin(staticAssets, {
+                        originAccessIdentity: originAccessIdentity
+                    }),
+                    viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    cachePolicy: new cdk.aws_cloudfront.CachePolicy(this, `${id}-immutable-cache-policy`, {
+                        queryStringBehavior: CacheQueryStringBehavior.none(),
+                        headerBehavior: CacheHeaderBehavior.allowList('Origin'),
+                        cookieBehavior: CacheCookieBehavior.none(),
+                        defaultTtl: Duration.days(1),
+                        maxTtl: Duration.days(365),
+                        minTtl: Duration.days(0),
+                        enableAcceptEncodingBrotli: true,
+                        enableAcceptEncodingGzip: true,
+                    }),
+                }
+            }
         });
 
         this.svelteLambda = svelte

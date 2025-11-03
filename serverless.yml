@@ -8,7 +8,7 @@ plugins:
 
 provider:
   name: aws
-  runtime: nodejs18.x
+  runtime: nodejs20.x
   lambdaHashingVersion: 20201221
   region: us-east-1 #Lambda@Edge must be deployed in us-east-1
   stage: ${opt:stage, 'dev'}
@@ -50,17 +50,14 @@ functions:
     timeout: 15
     url: true
 
-  #Router Function
-  cfLambda:
-    handler: build/edge/router.handler
-    memorySize: 128
-    timeout: 1
-    lambdaAtEdge:
-      distribution: 'WebsiteDistribution'
-      eventType: origin-request
-
 resources:
   Resources:
+    CloudFrontOriginAccessIdentity:
+      Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+      Properties:
+        CloudFrontOriginAccessIdentityConfig:
+          Comment: "Origin Access Identity for SvelteKit static assets"
+
     StaticAssets:
       Type: AWS::S3::Bucket
       Properties:
@@ -69,10 +66,10 @@ resources:
           Rules:
             - ObjectOwnership: BucketOwnerPreferred
         PublicAccessBlockConfiguration:
-          BlockPublicAcls: false
-          BlockPublicPolicy: false
-          IgnorePublicAcls: false
-          RestrictPublicBuckets: false
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
 
     StaticAssetsS3BucketPolicy:
       Type: AWS::S3::BucketPolicy
@@ -81,9 +78,10 @@ resources:
           Ref: StaticAssets
         PolicyDocument:
           Statement:
-            - Sid: PublicReadGetObject
+            - Sid: CloudFrontReadGetObject
               Effect: Allow
-              Principal: "*"
+              Principal:
+                CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
               Action:
                 - s3:GetObject
               Resource:
@@ -94,10 +92,9 @@ resources:
       Properties:
         DistributionConfig:
           Origins:
-            -
-              DomainName: !Select [2, !Split ["/", !GetAtt ["SvelteLambdaFunctionUrl", "FunctionUrl"]]]
+            - DomainName: !Select [2, !Split ["/", !GetAtt ["SvelteLambdaFunctionUrl", "FunctionUrl"]]]
               Id: default
-              OriginCustomHeaders: 
+              OriginCustomHeaders:
                 #Lambda@edge does not support ENV vars, so instead we have to pass in a customHeaders.
                 -
                   HeaderName: 's3-host'
@@ -106,6 +103,10 @@ resources:
                 HTTPPort: 80
                 HTTPSPort: 443
                 OriginProtocolPolicy: 'https-only'
+            - DomainName: '${self:provider.stage}-${self:service}-static-assets.s3.${self:provider.region}.amazonaws.com'
+              Id: 's3-origin'
+              S3OriginConfig:
+                OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
           Enabled: true
           Comment: '${self:service}_${self:provider.stage}'
           DefaultCacheBehavior:
@@ -133,6 +134,25 @@ resources:
             FunctionAssociations:
             - EventType: viewer-request
               FunctionARN: !GetAtt XForwardFunction.FunctionMetadata.FunctionARN
+          CacheBehavior:
+            PathPattern: '/_app/immutable/*'
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            TargetOriginId: 's3-origin'
+            ForwardedValues:
+              QueryString: false
+              Headers:
+                - 'Origin'
+              Cookies:
+                Forward: 'none'
+            ViewerProtocolPolicy: 'redirect-to-https'
+            
 
     XForwardFunction:
       Type: AWS::CloudFront::Function
