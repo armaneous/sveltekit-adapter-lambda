@@ -1,7 +1,14 @@
-import { copyFileSync, unlinkSync, existsSync, statSync, mkdirSync, emptyDirSync, readdirSync, writeFileSync } from 'fs-extra';
+import pkg from 'fs-extra';
+const { copyFileSync, unlinkSync, existsSync, statSync, mkdirSync, emptyDirSync, readdirSync, writeFileSync } = pkg;
 import { join } from 'path/posix';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 import * as esbuild from 'esbuild';
+
+// Get the directory path using import.meta.url instead of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * @param {{
